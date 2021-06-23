@@ -1,3 +1,4 @@
+# import packages
 import pandas
 import nltk
 from nltk import RegexpTokenizer
@@ -25,21 +26,15 @@ CC1.head
 # remove columns "mnis_id", "colnum", "oral_heading", "hansard_membership_id", "speakerid", "person_id", "url"
 CC1 = CC1.drop(["mnis_id", "colnum", "oral_heading", "hansard_membership_id", "speakerid", "person_id", "url"], axis=1)
 
-# TOPIC MODELLING
-
 # import stopwords
 nltk.download('stopwords')
 from nltk.corpus import stopwords
-
 stop_words = stopwords.words('english')
 
 # removing punctuation and un-useful words
 # remove unknown, remove anything in brackets or square brackets remove /n, and remove noisy words like hon and member
 CC1unk = CC1[CC1['display_as'].str.contains('unknown', case=False, na=False)]
 CC1 = CC1[~CC1['display_as'].str.contains('unknown', case=False, na=False)]
-# CC1 = CC1[CC1['speech'].str.contains('rose —', case=False, na=False)]  # removes a few speeches also containing this
-# CC1 = CC1[~CC1['speech'].str.contains('rose -', case=False, na=False)]
-# CC1 = CC1[~CC1['speech'].str.contains('rose-', case=False, na=False)]
 CC1['speech'] = CC1['speech'].str.replace("\n", "")
 CC1['speech'] = CC1['speech'].str.replace(r"\s*\(.*\)\s*", "")
 CC1['speech'] = CC1['speech'].str.replace(r"\s*\[.*\]\s*", "")
@@ -78,9 +73,8 @@ lemmatiser = WordNetLemmatizer()
 for item in range(len(CC1data)):
     CC1data[item] = [lemmatiser.lemmatize(w, get_wordnet_pos(w)) for w in CC1data[item]]
 
-from gensim.models import Phrases
-
 # bigrams
+from gensim.models import Phrases
 bigram = Phrases(CC1data, min_count=10)
 for item in range(len(CC1data)):
     for w in bigram[CC1data[item]]:
@@ -93,6 +87,7 @@ dictionary = Dictionary(CC1data)
 
 # filter out words in less than 20 documents and in more than 50% of documents
 dictionary.filter_extremes(no_below=20, no_above=0.75)
+
 # make bag of words corpus
 corpus = [dictionary.doc2bow(doc) for doc in CC1data]
 
@@ -128,14 +123,10 @@ model = LdaModel(
 )
 
 # show top words and average topic coherence
-
 top_topics = model.top_topics(corpus)  # , num_words=20)
-
 avg_topic_coherence = sum([t[1] for t in top_topics]) / num_topics
 print('Average topic coherence: %.4f.' % avg_topic_coherence)
-
 from pprint import pprint
-
 pprint(top_topics)
 
 # saving model
@@ -145,40 +136,38 @@ model.save('lda.modelccsp2')
 top_words_per_topic = []
 for t in range(model.num_topics):
     top_words_per_topic.extend([(t,) + x for x in model.show_topic(t, topn=100)])
-
 top_words = pandas.DataFrame(top_words_per_topic, columns=['Topic', 'Word', 'P'])
-
 top_words.to_csv("top_wordsCC1LDAmodelSP2hundred.csv")
 
-# map df of CC1 data back to CC1 and then add in topic identifier - for each topic give % of the doc and
-# the dominant topic + dominant topic minus the procedural/not really relevant topics.
-
-# gets topic % of each document - can calc dominant later
+# map df of CC1 data back to CC1 and then add in topic identifier - for each topic give % of the doc 
 get_document_topics = [model.get_document_topics(doc) for doc in corpus]
 document_topics_dict = [dict(x) for x in get_document_topics]
 document_topics_df = pandas.DataFrame(document_topics_dict).fillna(0)
 document_topics_df_reorder = document_topics_df[
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]]  # set this based on n topics
+
 # need to set index to start from 0 again
 CC1wTopics = pandas.concat([CC1.reset_index(drop=True), document_topics_df_reorder], axis=1)
+
 # joins and the words in CC1data into one list each and then makes df
 CC1processedtext = list(map(' '.join, CC1data))
 CC1processedtext_df = pandas.DataFrame(CC1processedtext)
+
 # joins the two dfs together
 CC1wTopics = pandas.concat([CC1wTopics, CC1processedtext_df], axis=1)
+
 # make csv with topics and processed text
 CC1wTopics.to_csv("CC1TopicsPTSP2.csv")
-from gensim.models.coherencemodel import CoherenceModel
 
-# get coherence score
+# gets coherence score
+from gensim.models.coherencemodel import CoherenceModel# get coherence score
 CoherenceScore = CoherenceModel(model=model, corpus=corpus, dictionary=dictionary, coherence='u_mass')
 print(CoherenceScore)
 print(CoherenceScore.get_coherence())
-# Coherence model for old method 8 topics 14/03: umass -1.9966769670609383
-# minimum score is better (only negative, so more negative)
-# 11 topics umas = -2.113
+print(CoherenceScore.get_coherence_per_topic())
 
 # for new method model 12 topics umass = -1.517
+# also tested other numbers of topics
 # 20 topics umass = -1.6806
+# not going above 20 topics as 20 seems to give good interpretable ones
 
-print(CoherenceScore.get_coherence_per_topic())
